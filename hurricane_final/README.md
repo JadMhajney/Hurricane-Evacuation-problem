@@ -10,5 +10,3 @@ Run:
 ```bash
 python -m hurricane.run --input hurricane/examples/small.txt   --agents stupid_greedy thief astar   --starts 1 1 3 --limit 10000 --L 10 --T 0.01
 ```
-
--------------------------------------------------------------------------

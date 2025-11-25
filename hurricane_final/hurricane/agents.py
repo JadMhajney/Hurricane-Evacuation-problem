@@ -5,7 +5,7 @@ FINAL CORRECTED agents.py - All issues fixed
 from typing import List, Tuple
 from .world import TRAVERSE, EQUIP, UNEQUIP, NOOP, TERMINATE, World, AgentState
 from .graph import Graph
-from .search import SearchState, normalize_people, normalize_kits, greedy_best_first, a_star, rta_star, world_globals
+from .search import SearchState, normalize_people, normalize_kits, greedy_one_step, a_star, rta_star, world_globals
 
 def shortest_path_to_target(world: World, a: AgentState) -> List[Tuple[str, tuple]]:
     targets = [v for v,c in world.people.items() if c>0]
@@ -216,27 +216,22 @@ class GreedySearchAgent:
         if a.internal.get("terminated", False):
             return (TERMINATE, ())
         
-        plan = a.internal.get("plan", [])
+        # Greedy Search Agent (Local 1-step lookahead)
+        # Does NOT plan ahead. Always re-evaluates.
+        
+        s0 = _make_search_state(world, a)
+        world_globals["Q"] = world.Q
+        world_globals["U"] = world.U
+        
+        # Always 1 expansion per move
+        plan, expansions = greedy_one_step(world.graph, world.P, s0)
+        world.time += expansions * a.internal.get("T", 0.0)
         
         if not plan:
-            s0 = _make_search_state(world, a)
-            world_globals["Q"] = world.Q
-            world_globals["U"] = world.U
-            plan, expansions = greedy_best_first(world.graph, world.P, s0)
-            world.time += expansions * a.internal.get("T", 0.0)
-            
-            if not plan:
-                a.internal["terminated"] = True
-                return (TERMINATE, ())
-            
-            a.internal["plan"] = plan[:]
-        
-        if not a.internal["plan"]:
             a.internal["terminated"] = True
             return (TERMINATE, ())
-        
-        action = a.internal["plan"].pop(0)
-        return action
+            
+        return plan[0]
 
 class AStarAgent:
     def __init__(self, LIMIT: int = 10000):

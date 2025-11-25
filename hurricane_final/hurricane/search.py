@@ -51,26 +51,48 @@ def successors(graph: Graph, P: int, state: SearchState) -> List[Tuple[float, Tu
 
 world_globals = {"Q": 0, "U": 0}
 
-def greedy_best_first(graph: Graph, P: int, start: SearchState):
-    frontier = []
-    seen = set()
-    tie = count()
-    expansions = 0
-    heapq.heappush(frontier, (admissible_heuristic(graph, start.pos, start.targets(), start.equipped, P), next(tie), start, []))
-    while frontier:
-        h, _, state, path = heapq.heappop(frontier)
-        if state in seen:
+def greedy_one_step(graph: Graph, P: int, start: SearchState):
+    """
+    Local Greedy Search (1-step lookahead):
+    1. Generate all immediate successors.
+    2. Evaluate h(successor) for each.
+    3. Pick the action leading to the successor with the lowest h.
+    4. Break ties by preferring lower vertex IDs.
+    Returns: ([action], expansions=1)
+    """
+    # Trivial goal test
+    if len(start.targets()) == 0:
+        return [], 0
+        
+    candidates = []
+    for cost, action, ns in successors(graph, P, start):
+        # Ignore NOOP in greedy search (prevents infinite loops when stuck)
+        if action[0] == NOOP:
             continue
-        seen.add(state)
-        expansions += 1
-        if len(state.targets()) == 0:
-            return path, expansions
-        for cost,action,ns in successors(graph, P, state):
-            if ns in seen: 
-                continue
-            hh = admissible_heuristic(graph, ns.pos, ns.targets(), ns.equipped, P)
-            heapq.heappush(frontier, (hh, next(tie), ns, path+[action]))
-    return [], expansions
+            
+        h = admissible_heuristic(graph, ns.pos, ns.targets(), ns.equipped, P)
+        candidates.append((h, action))
+        
+    if not candidates:
+        return [], 1
+        
+    # Tie-break: min h, then min vertex ID in action params
+    def tiebreaker(item):
+        h_val, act = item
+        kind, params = act
+        # Prefer moves that progress to lower to_v as a mild, stable tiebreak
+        v_id = 10**9
+        if kind == TRAVERSE and isinstance(params, tuple) and len(params) >= 1:
+            v_id = params[0]
+        return (h_val, v_id)
+        
+    best_h, best_action = min(candidates, key=tiebreaker)
+    
+    # If best_h is infinite, we are stuck
+    if best_h == float('inf'):
+        return [], 1
+        
+    return [best_action], 1
 
 def a_star(graph: Graph, P: int, start: SearchState, LIMIT: int = 10000):
     cnt = 0
