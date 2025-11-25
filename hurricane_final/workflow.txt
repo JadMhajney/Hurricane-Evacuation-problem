@@ -1,0 +1,202 @@
+## **End-to-End Workflow**
+
+### **1. INPUT: Read the Graph File**
+```
+run.py → parse_world_from_file(args.input)
+```
+- Reads a `.txt` file (e.g., `hurricane/examples/small.txt`)
+- Extracts:
+  - `#N` = number of vertices
+  - `#Q`, `#U`, `#P` = parameters (equip time, unequip time, speed penalty)
+  - `#V` = vertices with people (`P#`) and kits (`K`)
+  - `#E` = edges with weights and flooded status (`F`)
+- Returns: `World` object + graph info dict
+
+### **2. INITIALIZE: Create Agents**
+```
+run.py → AGENT_TYPES dictionary
+```
+- Parse command-line arguments (`--agents`, `--starts`, `--limit`, `--L`, `--T`)
+- Create agent instances for each type:
+  - `HumanAgent` (manual input)
+  - `StupidGreedyAgent` (simple greedy)
+  - `ThiefAgent` (steals people)
+  - `GreedySearchAgent` (greedy search)
+  - `AStarAgent` (A* with expansion limit)
+  - `RealTimeAStarAgent` (RTA* with lookahead)
+- Assign starting positions to each agent
+- Pick up any people at initial positions
+
+### **3. MAIN LOOP: Simulation Steps**
+```
+run.py → while step < MAX_STEPS:
+```
+
+For each step:
+
+#### **Step A: For Each Agent (Sequential)**
+1. **Check termination conditions:**
+   - If all people saved → end simulation (SUCCESS)
+   - If all non-thief agents terminated → end (NATURAL)
+   - If no progress for 20 rounds → force stop (EMERGENCY BRAKE)
+
+2. **Call Agent's Decision Policy:**
+   ```
+   action = policies[i](world, agent_state)
+   ```
+   - Agent examines current world state
+   - Returns an action: `TRAVERSE`, `EQUIP`, `UNEQUIP`, `NOOP`, or `TERMINATE`
+
+#### **Step B: Execute Action in World**
+```
+world.py → do_action(agent, action)
+```
+
+Depending on action type:
+
+| Action | Effect | Time Cost |
+|--------|--------|-----------|
+| **TRAVERSE** | Move to adjacent vertex | `edge.weight * (P if equipped else 1)` |
+| **EQUIP** | Pick up kit at current vertex | `Q` time units |
+| **UNEQUIP** | Drop kit, leave at vertex | `U` time units |
+| **NOOP** | Do nothing | `1` time unit |
+| **TERMINATE** | Agent stops participating | `0` |
+
+#### **Step C: Update World State**
+1. **Add world time** based on action cost
+2. **Pick up people** (if agent moved to a new vertex)
+3. **Update agent's knowledge** of other agents' positions
+4. **Recompute scores** for all agents:
+   ```
+   score = (people_saved * 1000) - (world_time)
+   ```
+5. **Print world state**
+
+#### **Step D: Check Termination Conditions**
+- All people rescued? → **SUCCESS**
+- All agents terminated? → **NATURAL END**
+- No progress for 20+ rounds? → **EMERGENCY BRAKE**
+- Idle for 5+ rounds with no path? → **TIMEOUT**
+
+### **4. AGENT DECISION PROCESS (Inside Each Policy)**
+
+Each agent type uses a different strategy:
+
+```
+agents.py → __call__(world, agent_state)
+```
+
+**Example: AStarAgent**
+1. Build a search problem
+2. Use A* search with heuristic: `h = min(dist to any target) + MST(remaining targets)`
+3. Expand nodes up to `--limit` expansions
+4. Return best action found
+5. Add situated planning time `T * num_expansions` to world time
+
+**Example: StupidGreedyAgent**
+1. Pick nearest person from current position
+2. Move one step closer using Dijkstra
+3. Return TRAVERSE action
+
+### **5. OUTPUT: Results**
+
+After simulation ends:
+```
+run.py → Final Results
+```
+- Print termination reason
+- Show total simulation time
+- List each agent's:
+  - People saved
+  - Number of actions taken
+  - Final score
+- Declare winner (highest score among rescue agents)
+
+---
+
+## **Visual Flow Diagram**
+
+```
+┌─────────────────┐
+│ Input File      │
+│ (small.txt)     │
+└────────┬────────┘
+         │
+         ↓
+┌─────────────────────────────┐
+│ parse_world_from_file()     │
+│ → World object              │
+│ → Graph, people, kits, P,Q,U│
+└────────┬────────────────────┘
+         │
+         ↓
+┌─────────────────────────────┐
+│ Create Agents               │
+│ (assign start positions)    │
+│ Pick up initial people      │
+└────────┬────────────────────┘
+         │
+         ↓
+    ╔════════════════════╗
+    ║  MAIN LOOP         ║
+    ║  step < MAX_STEPS  ║
+    ╚─────────┬──────────╝
+             │
+    ┌────────┴─────────┐
+    │ For each agent:  │
+    │                  │
+    │ 1. Get action    │
+    │    (policy call) │
+    │                  │
+    │ 2. Execute       │
+    │    (world update)│
+    │                  │
+    │ 3. Pick up       │
+    │    people        │
+    │                  │
+    │ 4. Recompute     │
+    │    scores        │
+    │                  │
+    │ 5. Print state   │
+    └─────────┬────────┘
+              │
+    ┌─────────┴──────────────┐
+    │ Check termination:     │
+    │ • All saved?           │
+    │ • All agents done?     │
+    │ • No progress?         │
+    │ • Timeout?             │
+    └──────────┬─────────────┘
+              YES
+              │
+              ↓
+┌──────────────────────────────┐
+│ FINAL RESULTS                │
+│ - Termination reason         │
+│ - Agent scores               │
+│ - Winner                     │
+└──────────────────────────────┘
+```
+
+---
+
+## **Example Command & Execution**
+
+```bash
+python -m hurricane.run \
+  --input hurricane/examples/small.txt \
+  --agents stupid_greedy thief astar \
+  --starts 1 1 3 \
+  --limit 10000 \
+  --L 10 \
+  --T 0.01
+```
+
+1. Load `small.txt` graph
+2. Create 3 agents:
+   - Agent A1: `StupidGreedyAgent` at vertex 1
+   - Agent A2: `ThiefAgent` at vertex 1
+   - Agent A3: `AStarAgent` at vertex 3 (limit: 10000 expansions)
+3. Run simulation loop until all people saved or termination condition met
+4. Print winner and final scores
+
